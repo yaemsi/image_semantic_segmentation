@@ -1,0 +1,32 @@
+[project]
+name = "image-semantic-segmentation"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "transformers",
+    "huggingface",
+    "datasets>=4.5.0",
+    "accelerate",
+    "evaluate",
+    "deepspeed",
+    "numpy",
+    "pandas",
+    "scipy",
+    "ipykernel>=7.1.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+]
+
+[tool.uv.sources]
+torch = {index = "pytorch-cu130"}
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+
+
+[tool.setuptools.packages.find]
+    where = ["."] # Search in the current directory
+    include = ["image_semantic_segmentation"] # Include packages starting with these names
