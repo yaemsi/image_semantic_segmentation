@@ -3,7 +3,7 @@ name = "image-semantic-segmentation"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = "==3.13.11"
 dependencies = [
     "transformers",
     "huggingface",
@@ -14,19 +14,32 @@ dependencies = [
     "numpy",
     "pandas",
     "scipy",
+    "requests>=2.32.2",
     "ipykernel>=7.1.0",
-    "torch>=2.10.0",
-    "torchvision>=0.25.0",
+    "jupyterlab>=4.5.3",
+    "loguru>=0.7.3",
+    "albumentations>=2.0.8",
+    "segmentation-models-pytorch>=0.5.0",
+    "torch==2.8.0",
+    "torchvision==0.23.0",
+    "torchaudio==2.8.0"
 ]
 
 [tool.uv.sources]
-torch = {index = "pytorch-cu130"}
+torch = {index = "pytorch-cu129", marker = "sys_platform == 'linux'"}
+torchvision = {index = "pytorch-cu129", marker = "sys_platform == 'linux'"}
+torchaudio = {index = "pytorch-cu129", marker = "sys_platform == 'linux'"}
+
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
 
 
 [tool.setuptools.packages.find]
     where = ["."] # Search in the current directory
     include = ["image_semantic_segmentation"] # Include packages starting with these names
+
+# Configuration for uv
+[tool.uv]
+index-strategy = "unsafe-best-match" # Crucial for resolving complex dependency conflicts

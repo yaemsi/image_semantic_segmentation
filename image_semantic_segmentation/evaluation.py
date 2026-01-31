@@ -1,5 +1,8 @@
-from subprocess import call
 import argparse
+
+from subprocess import call
+from loguru import logger
+
 from PIL import Image
 import glob
 import os
@@ -32,7 +35,7 @@ def compute_metrics(metric, pred_path: str, mask_path: str) -> float:
     each image and mask located in the pred_path and mask_path respectively.
     """
     pred_file_list = sorted(glob.glob(pred_path + "/*"))
-    print(f"pred_file_list == {pred_file_list}")
+    logger.info(f"pred_file_list == {pred_file_list}")
     score = 0.
 
     for pred_file in pred_file_list:
@@ -65,7 +68,7 @@ if __name__ == '__main__':
     score_dict = {}
 
     script_dir = os.path.dirname(args.script_path)
-    print(f"script_dir == {script_dir}")
+    logger.info(f"script_dir == {script_dir}")
     script_name = os.path.basename(args.script_path)
     interp_name = './'
     if os.path.splitext(script_name)[1] == '.py':
@@ -78,9 +81,9 @@ if __name__ == '__main__':
         if not os.path.isdir(pred_path):
             current_wd = os.getcwd()
             os.chdir(script_dir)
-            print('Generating the predictions for {} set'.format(test_name))
+            logger.info('Generating the predictions for {} set'.format(test_name))
             call([interp_name, script_name, os.path.join(args.testset_path, test_name, 'img'), pred_path])
-            print('Generation done.')
+            logger.info('Generation done.')
             os.chdir(current_wd)
 
         test_mask_path = os.path.join(args.testset_path, test_name, 'mask')
@@ -88,7 +91,7 @@ if __name__ == '__main__':
         score_dict[test_name] = score
 
     if len(test_dirs) == 1:
-        print('mean IOU on {}: {:.4f}'.format(test_name, score_dict[test_name]))
+        logger.info('mean IOU on {}: {:.4f}'.format(test_name, score_dict[test_name]))
     else:
         for test_name in test_dirs:
-            print('mean IOU on {}: {:.4f}'.format(test_name, score_dict[test_name]))
+            logger.info('mean IOU on {}: {:.4f}'.format(test_name, score_dict[test_name]))
