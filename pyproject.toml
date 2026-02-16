@@ -3,7 +3,7 @@ name = "image-semantic-segmentation"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "==3.13.11"
+requires-python = "==3.12.12"
 dependencies = [
     "transformers",
     "huggingface",
@@ -20,24 +20,26 @@ dependencies = [
     "loguru>=0.7.3",
     "albumentations>=2.0.8",
     "segmentation-models-pytorch>=0.5.0",
-    "torch==2.8.0",
-    "torchvision==0.23.0",
-    "torchaudio==2.8.0",
+    "torch==2.9.0+cu130",
+    "torchvision==0.24.0+cu130",
+    "torchaudio==2.9.0+cu130",
     "ipywidgets>=8.1.8",
     "flash-attn",
     "lighteval>=0.13.0",
 ]
 
+
+
 [tool.uv.sources]
-torch = {index = "pytorch-cu129", marker = "sys_platform == 'linux'"}
-torchvision = {index = "pytorch-cu129", marker = "sys_platform == 'linux'"}
-torchaudio = {index = "pytorch-cu129", marker = "sys_platform == 'linux'"}
-flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.1/flash_attn-2.8.1+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }
+torch = {index = "pytorch-cu130", marker = "sys_platform == 'linux'"}
+torchvision = {index = "pytorch-cu130", marker = "sys_platform == 'linux'"}
+torchaudio = {index = "pytorch-cu130", marker = "sys_platform == 'linux'"}
+flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.1/flash_attn-2.8.1+cu13torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }
 
 
 [[tool.uv.index]]
-name = "pytorch-cu129"
-url = "https://download.pytorch.org/whl/cu129"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 
 
 [tool.setuptools.packages.find]
@@ -47,3 +49,4 @@ url = "https://download.pytorch.org/whl/cu129"
 # Configuration for uv
 [tool.uv]
 index-strategy = "unsafe-best-match" # Crucial for resolving complex dependency conflicts
+no-build-isolation-package = ["flash-attn"]
