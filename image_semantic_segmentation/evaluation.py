@@ -31,7 +31,8 @@ def iou(pred, mask, label=1) -> float:
 
 
 def compute_metrics(metric, pred_path: str, mask_path: str) -> float:
-    """A function that applies the metric to compare
+    """
+    A function that applies the metric to compare
     each image and mask located in the pred_path and mask_path respectively.
     """
     pred_file_list = sorted(glob.glob(pred_path + "/*"))
@@ -50,7 +51,7 @@ def compute_metrics(metric, pred_path: str, mask_path: str) -> float:
         score += metric(torch.from_numpy(mask_pred), mask)
     return score/len(pred_file_list)
 
-
+"""
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Script to benchmark a model on different test sets')
     parser.add_argument('--script_path', type=str, default='./infer.py',
@@ -95,3 +96,4 @@ if __name__ == '__main__':
     else:
         for test_name in test_dirs:
             logger.info('mean IOU on {}: {:.4f}'.format(test_name, score_dict[test_name]))
+"""

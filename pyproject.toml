@@ -26,6 +26,9 @@ dependencies = [
     "ipywidgets>=8.1.8",
     "flash-attn",
     "lighteval>=0.13.0",
+    "fsspec>=2025.9.0",
+    "matplotlib>=3.10.8",
+    "wandb>=0.25.1",
 ]
 
 
