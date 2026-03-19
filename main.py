@@ -5,15 +5,21 @@ import wandb
 
 from datasets import load_from_disk
 from loguru import logger
-from transformers import HfArgumentParser
+from transformers import (
+    HfArgumentParser,
+    Trainer
+)
+
 from image_semantic_segmentation import (
     UNetPlusPlusConfig,
     UNetPlusPlusHF,
-    LogoSegmentationTrainer,
+    custom_loss_func,
     GeneralArguments,
     DataProcessingArguments,
     ModelArguments,
     CustomTrainingArguments,
+    EvalArguments,
+    padding_fn,
     train_preprocess_fn,
     eval_preprocess_fn,
     compute_metrics,
@@ -27,7 +33,7 @@ from image_semantic_segmentation import (
 def main():
     logger.info("*** Main program ***")   
     parser = HfArgumentParser(
-        (GeneralArguments, DataProcessingArguments, ModelArguments, CustomTrainingArguments)
+        (GeneralArguments, DataProcessingArguments, ModelArguments, CustomTrainingArguments, EvalArguments)
         )
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file
@@ -36,7 +42,7 @@ def main():
         # If we pass only one argument to the script and it's the path to a yaml file
         gen_args, data_args, model_args, train_args= parser.parse_yaml_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        gen_args, data_args, model_args, train_args = parser.parse_args_into_dataclasses()
+        gen_args, data_args, model_args, train_args, eval_args = parser.parse_args_into_dataclasses()
     
     if gen_args.preprocess:
         if data_args.extract_data:
@@ -59,27 +65,32 @@ def main():
         ds = load_from_disk(ds_path)
 
         # Apply to your dataset
-        ds["train"].set_transform(train_preprocess_fn)
-        ds["validation"].set_transform(eval_preprocess_fn)
-        ds["test"].set_transform(eval_preprocess_fn)
+        #ds["train"].set_transform(train_preprocess_fn)
+        #ds["validation"].set_transform(eval_preprocess_fn)
+        #ds["test"].set_transform(eval_preprocess_fn)
+        ds["train"].set_transform(padding_fn)
+        ds["validation"].set_transform(padding_fn)
+        ds["test"].set_transform(padding_fn)
 
         logger.info(f"# Instantiating the U-net...")
         config = UNetPlusPlusConfig(**model_args.__dict__)
         model = UNetPlusPlusHF(config)
         if train_args.torch_compile:
+            logger.info(f"# Compiling the model...")
             model.compile()
 
         logger.info(f"# Setting up wandb...")
         wandb.init(project = train_args.project, name = f"{train_args.run_name}_{secrets.token_hex(4)}")
 
         logger.info(f"# Initializing the trainer...")
-        trainer = LogoSegmentationTrainer(
+        trainer = Trainer(
             model = model,
             args = train_args,
             train_dataset = ds["train"],
             eval_dataset = ds["validation"],
             compute_metrics = compute_metrics,
             data_collator = seg_data_collator,
+            compute_loss_func=custom_loss_func
         )
         logger.info(f"# Launching the training...")
         trainer.train()

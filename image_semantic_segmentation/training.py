@@ -4,15 +4,27 @@ import torch.nn as nn
 
 import numpy as np
 
+from loguru import logger
 from transformers import (
     PreTrainedModel, 
     Trainer,
+)
+
+from transformers.modeling_outputs import (
+    SemanticSegmenterOutput,
 )
 
 from typing import (
     Any,
     Dict,
     Tuple
+)
+
+from image_semantic_segmentation import (
+    IMAGE_H, 
+    PAD_H,
+    IMAGE_W, 
+    PAD_W,
 )
 
 class DiceLoss(nn.Module):
@@ -52,53 +64,50 @@ def compute_metrics(
     eval_pred: Tuple[torch.Tensor, torch.Tensor]
     ) -> Dict[str, Any]:
     
-    logits, labels = eval_pred
+    logits, labels = eval_pred # (B, 2, H, W) x (B, H, W)
+    
+
     metric = evaluate.load("mean_iou")
 
     # Upsample logits to match label size
     predictions = np.argmax(logits, axis=1)
+
+    # Manual removal of padding
+    predictions = predictions[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]   # (B, H',W)
+    labels = labels[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]             # (B, H',W)
     
-    return metric.compute(
+    res = metric.compute(
         predictions=predictions, 
         references=labels, 
         num_labels=2, 
         ignore_index=255
     )
+    for k in res.keys():
+        v = res[k]
+        if isinstance(v, np.ndarray):
+            res[k] = v.tolist()
+    return res
 
 
-class LogoSegmentationTrainer(Trainer):
 
-    def compute_loss(
-        self, 
-        model: PreTrainedModel, 
-        inputs: Dict[str, torch.Tensor | Any],
-        return_outputs: bool = False,
-        num_items_in_batch: torch.Tensor | int | None = None, 
-        ) -> torch.Tensor | tuple[torch.Tensor, Any]:
-        
-        labels = inputs.pop("labels")           # shape (batch, h, w)
-        outputs = model(**inputs)               # Segformer outputs
-        logits = outputs.logits                 # (batch, 2, h, w)
+def custom_loss_func(
+                outputs: SemanticSegmenterOutput,
+                labels: torch.Tensor,
+                num_items_in_batch = None,
+            ):
+    logits = outputs.logits     # (batch, 2, h, w)
 
-        # Option A: Keep CE (very stable baseline)
-        # loss_fct = torch.nn.CrossEntropyLoss(ignore_index=255)
-        # loss = loss_fct(logits, labels.long())
+    # Option B: Dice + BCE (your preference)
+    preds = torch.softmax(logits, dim=1)[:, 1]         # prob of logo class
+    preds = preds.unsqueeze(1)                         # (B,1,H,W)
+    labels_binary = (labels == 1).float().unsqueeze(1) # (B,1,H,W)
 
-        # Option B: Dice + BCE (your preference)
-        preds = torch.softmax(logits, dim=1)[:, 1]   # prob of logo class
-        preds = preds.unsqueeze(1)                   # (B,1,H,W)
 
-        labels_binary = (labels == 1).float().unsqueeze(1)  # (B,1,H,W)
+    # Manual removal of padding
+    preds = preds[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]                     # (B,1,H',W)
+    labels_binary = labels_binary[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]     # (B,1,H',W)
 
-        # Reuse your earlier losses
-        #dice_loss = DiceLoss()(preds, labels_binary)
-        #dice_loss = nn.BCELoss()(preds, labels_binary)
-        
-        #bce_loss  = F.binary_cross_entropy_with_logits(logits[:,1,:,:], labels_binary.squeeze(1))
-        # or F.binary_cross_entropy(preds, labels_binary)
+    loss = nn.BCELoss()(preds, labels_binary)
 
-        #loss = 0.5 * dice_loss + 0.5 * bce_loss
-        loss = CombinedLoss()(preds, labels_binary)
-
-        return (loss, outputs) if return_outputs else loss
+    return loss
 

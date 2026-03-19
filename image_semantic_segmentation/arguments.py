@@ -167,13 +167,13 @@ class CustomTrainingArguments(TrainingArguments):
         },
     )
     max_steps: int = field(
-        default=500,
+        default=50000,
         metadata={
             "help": "Overrides `num_train_epochs`. If set to a positive number, the total number of training steps to perform."
         },
     )
     warmup_steps: float = field(
-        default=150,
+        default=15000,
         metadata={
             "help": "Number of steps for a linear warmup from 0 to `learning_rate`. Can be an integer (exact steps) or a float in [0, 1) (ratio of total steps)."
         },
@@ -195,7 +195,7 @@ class CustomTrainingArguments(TrainingArguments):
         metadata={"help": "When to run evaluation. Options: 'no', 'steps', 'epoch'."},
     )
     eval_steps: float | None = field(
-        default=25,
+        default=2500,
         metadata={
             "help": (
                 "Number of update steps between evaluations if `eval_strategy='steps'`. Defaults to `logging_steps` if not set."
@@ -211,7 +211,7 @@ class CustomTrainingArguments(TrainingArguments):
         },
     )
     save_steps: float = field(
-        default=25,
+        default=2500,
         metadata={
             "help": (
                 "Save checkpoint every X updates steps. Should be an integer or a float in range `[0,1)`. "
@@ -359,3 +359,26 @@ class CustomTrainingArguments(TrainingArguments):
 
     def __post_init__(self):
         super().__post_init__()
+
+
+
+@dataclass
+class EvalArguments:
+    """
+    Arguments for evaluation.
+    """
+    test_set_path: str = field(
+        default="resnet34",
+        metadata={
+            "help": "Path to test data."
+        },
+    )
+    prediction_path: int= field(
+        default=5,
+        metadata={
+            "help": "Where to save results."
+        },
+    )
+
+    def __post_init__(self):
+        pass

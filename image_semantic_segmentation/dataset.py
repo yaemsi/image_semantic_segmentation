@@ -24,6 +24,11 @@ from typing import (
     Dict
 )
 
+# Save padding values
+IMAGE_H, PAD_H = 340, 0
+IMAGE_W, PAD_W = 512, 6
+
+
 
 def extract_data(root_dir: str | os.PathLike, output_dir: str | os.PathLike) -> None:
     os.makedirs(output_dir, exist_ok=True)
@@ -86,13 +91,18 @@ def padding_fn(
         pad_height_divisor=32, 
         pad_width_divisor=32, 
         border_mode=cv2.BORDER_CONSTANT, 
-        fill=[0, 0, 0] 
+        fill=255,
+        fill_mask=255
     ),
+    ToTensorV2(),
     ])
     images = [np.array(image.convert("RGB")) for image in examples["pixel_values"]]
 
     # Ensure masks are single-channel (L) for segmentation
     masks = [np.array(mask.convert("L")) for mask in examples["labels"]]
+    
+    # Scale masks to 0,1
+    masks = [(mask - mask.min()) / (mask.max() - mask.min()) for mask in masks]
     
     inputs = {"pixel_values": [], "labels": []}
 
@@ -101,10 +111,11 @@ def padding_fn(
         # Apply Padding
         padded = transform_func(image=img, mask=mask)
         
-        inputs["pixel_values"].append(padded["image"])
+        inputs["pixel_values"].append(padded["image"].float())
+        
         # Ensure mask is long type and scaled (0 and 1)
         inputs["labels"].append(padded["mask"].long())
-        
+
     return inputs
 
 def train_preprocess_fn(
@@ -113,16 +124,6 @@ def train_preprocess_fn(
     
     # Define the transformations
     transform_func = A.Compose([
-        # Padding
-        A.PadIfNeeded(
-            min_height=None, 
-            min_width=None, 
-            pad_height_divisor=32, 
-            pad_width_divisor=32, 
-            border_mode=cv2.BORDER_CONSTANT, 
-            fill=[0, 0, 0] 
-        ),
-
         # 1. Geometric: Handles both image and mask
         A.HorizontalFlip(p=0.5),
         A.Affine(
@@ -147,13 +148,27 @@ def train_preprocess_fn(
             p=0.3),
         
         # 4. Normalization (using ImageNet stats)
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        # A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+
+        # Padding
+        A.PadIfNeeded(
+            min_height=None, 
+            min_width=None, 
+            pad_height_divisor=32, 
+            pad_width_divisor=32, 
+            border_mode=cv2.BORDER_CONSTANT, 
+            fill=255,
+            fill_mask=255
+        ),
         ToTensorV2(),
     ])
 
     images = [np.array(image.convert("RGB")) for image in examples["pixel_values"]]
     # Ensure masks are single-channel (L) for segmentation
     masks = [np.array(mask.convert("L")) for mask in examples["labels"]]
+
+    # Scale masks to 0,1
+    masks = [(mask - mask.min()) / (mask.max() - mask.min()) for mask in masks]
     
     inputs = {"pixel_values": [], "labels": []}
     #print(f"############### examples.keys = {examples.keys()}")
@@ -173,8 +188,7 @@ def train_preprocess_fn(
 
 
 def eval_preprocess_fn(
-    examples: Dict[str, torch.Tensor], 
-    validation: bool = False
+    examples: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
     
     # Define the transformations
@@ -186,9 +200,10 @@ def eval_preprocess_fn(
             pad_height_divisor=32, 
             pad_width_divisor=32, 
             border_mode=cv2.BORDER_CONSTANT, 
-            fill=[0, 0, 0] 
+            fill=0,
+            fill_mask=255
         ),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        #A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2(),
     ])
 
@@ -196,6 +211,9 @@ def eval_preprocess_fn(
     
     # Ensure masks are single-channel (L) for segmentation
     masks = [np.array(mask.convert("L")) for mask in examples["labels"]]
+
+    # Scale masks to 0,1
+    masks = [(mask - mask.min()) / (mask.max() - mask.min()) for mask in masks]
     
     inputs = {"pixel_values": [], "labels": []}
     

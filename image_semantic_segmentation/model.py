@@ -13,7 +13,7 @@ from transformers.modeling_outputs import (
 from typing import (
     Any,
     Dict,
-    Tuple,
+    List,
 )
 from image_semantic_segmentation.training import (
     DiceLoss,
@@ -28,7 +28,7 @@ class UNetPlusPlusConfig(PretrainedConfig):
         encoder_depth: int = 5, 
         encoder_weights: str = 'imagenet', 
         decoder_use_norm: str = 'batchnorm', 
-        decoder_channels: Tuple = (256, 128, 64, 32, 16), 
+        decoder_channels: List[int] = [256, 128, 64, 32, 16], 
         decoder_attention_type: str | None = None, 
         decoder_interpolation: str ='nearest', 
         in_channels: int = 3, 
@@ -61,7 +61,7 @@ class UNetPlusPlusHF(PreTrainedModel):
             encoder_depth=config.encoder_depth, 
             encoder_weights=config.encoder_weights, 
             decoder_use_norm=config.decoder_use_norm, 
-            decoder_channels=config.decoder_channels, 
+            decoder_channels=tuple(config.decoder_channels), 
             decoder_attention_type=config.decoder_attention_type, 
             decoder_interpolation=config.decoder_interpolation, 
             in_channels=config.in_channels, 
@@ -75,7 +75,6 @@ class UNetPlusPlusHF(PreTrainedModel):
         pixel_values: torch.Tensor, 
         labels: torch.Tensor = None
         ) -> SemanticSegmenterOutput:
-
         logits = self.model(pixel_values)
         loss = None
         if labels is not None:
@@ -83,8 +82,8 @@ class UNetPlusPlusHF(PreTrainedModel):
             loss_fct = CombinedLoss()
             # SMP outputs [Batch, Classes, H, W]
             # We take the 'logo' channel (index 1) for binary comparison
-            loss = loss_fct(logits[:, 1, :, :], labels.float())
-            loss = loss_fct(logits[:, 1, :, :], labels.float())
+            loss = loss_fct(logits[:, 1, :, :], labels)
+            loss = loss_fct(logits[:, 1, :, :], labels)
         if loss is not None:
             return SemanticSegmenterOutput(loss = loss, logits = logits)  
         else:
