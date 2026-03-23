@@ -52,12 +52,35 @@ class CombinedLoss(nn.Module):
         super(CombinedLoss, self).__init__()
         self.alpha = alpha  # Weight for Dice (1 - alpha for BCE)
         self.dice = DiceLoss(smooth=smooth)
-        self.bce = nn.BCELoss()
+        self.bce = nn.BCEWithLogitsLoss()
 
     def forward(self, preds: torch.Tensor, targets: torch.Tensor) -> float:
         dice_loss = self.dice(preds, targets)
         bce_loss = self.bce(preds, targets)
         return self.alpha * dice_loss + (1 - self.alpha) * bce_loss
+
+
+def simple_loss_func(
+                outputs: SemanticSegmenterOutput,
+                labels: torch.Tensor,
+                num_items_in_batch = None,
+            ):
+    logits = outputs.logits     # (batch, 2, h, w)
+
+    # Option B: Dice + BCE (your preference)
+    # preds = torch.softmax(logits, dim=1)[:, 1]       We switched to bcewithlogits loss     
+    preds = logits[:, 1, :, :]                         # prob of logo class
+    preds = preds.unsqueeze(1)                         # (B,1,H,W)
+    labels_binary = (labels == 1).float().unsqueeze(1) # (B,1,H,W)
+
+
+    # Manual removal of padding
+    preds = preds[:, :,PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]                     # (B,1,H',W)
+    labels_binary = labels_binary[:,:,PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]     # (B,1,H',W)
+
+    loss = nn.BCEWithLogitsLoss()(preds, labels_binary)
+
+    return loss
 
 
 def compute_metrics(
@@ -73,8 +96,8 @@ def compute_metrics(
     predictions = np.argmax(logits, axis=1)
 
     # Manual removal of padding
-    predictions = predictions[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]   # (B, H',W)
-    labels = labels[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]             # (B, H',W)
+    predictions = predictions[:,PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]   # (B, H',W)
+    labels = labels[:,PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]             # (B, H',W)
     
     res = metric.compute(
         predictions=predictions, 
@@ -90,24 +113,5 @@ def compute_metrics(
 
 
 
-def custom_loss_func(
-                outputs: SemanticSegmenterOutput,
-                labels: torch.Tensor,
-                num_items_in_batch = None,
-            ):
-    logits = outputs.logits     # (batch, 2, h, w)
 
-    # Option B: Dice + BCE (your preference)
-    preds = torch.softmax(logits, dim=1)[:, 1]         # prob of logo class
-    preds = preds.unsqueeze(1)                         # (B,1,H,W)
-    labels_binary = (labels == 1).float().unsqueeze(1) # (B,1,H,W)
-
-
-    # Manual removal of padding
-    preds = preds[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]                     # (B,1,H',W)
-    labels_binary = labels_binary[:,PAD_H:IMAGE_H-PAD_H,PAD_W:IMAGE_W-PAD_W]     # (B,1,H',W)
-
-    loss = nn.BCELoss()(preds, labels_binary)
-
-    return loss
 

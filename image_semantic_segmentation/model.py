@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import segmentation_models_pytorch as smp
 
 from argparse import Namespace
@@ -15,9 +16,11 @@ from typing import (
     Dict,
     List,
 )
-from image_semantic_segmentation.training import (
-    DiceLoss,
-    CombinedLoss
+from image_semantic_segmentation import (
+    PAD_H,
+    IMAGE_H,
+    PAD_W,
+    IMAGE_W
 )
 
 class UNetPlusPlusConfig(PretrainedConfig):
@@ -69,6 +72,7 @@ class UNetPlusPlusHF(PreTrainedModel):
             activation=config.activation, 
             aux_params=config.aux_params
         )
+        self.post_init()
     
     def forward(
         self, 
@@ -79,11 +83,21 @@ class UNetPlusPlusHF(PreTrainedModel):
         loss = None
         if labels is not None:
             # We reuse the DiceBCELoss logic from before
-            loss_fct = CombinedLoss()
+            loss_fct = nn.BCEWithLogitsLoss()
             # SMP outputs [Batch, Classes, H, W]
             # We take the 'logo' channel (index 1) for binary comparison
-            loss = loss_fct(logits[:, 1, :, :], labels)
-            loss = loss_fct(logits[:, 1, :, :], labels)
+
+            #preds = torch.softmax(logits, dim=1)[:, 1]        # We switched to bcewithlogits loss  
+            preds = logits[:, 1, :, :]                         # prob of logo class
+            preds = preds.unsqueeze(1)                         # (B,1,H,W)
+            labels_binary = (labels == 1).float().unsqueeze(1) # (B,1,H,W)
+
+
+            # Manual removal of padding
+            preds = preds[:, :, PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]                     # (B,1,H',W)
+            labels_binary = labels_binary[:, :, PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]     # (B,1,H',W)
+            loss = loss_fct(preds, labels_binary)
+
         if loss is not None:
             return SemanticSegmenterOutput(loss = loss, logits = logits)  
         else:

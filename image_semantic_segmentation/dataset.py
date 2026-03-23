@@ -19,14 +19,17 @@ from datasets import (
     concatenate_datasets
 )
 from os.path import isfile, join
+
+from tqdm import tqdm
+
 from typing import (
     List,
     Dict
 )
 
 # Save padding values
-IMAGE_H, PAD_H = 340, 0
-IMAGE_W, PAD_W = 512, 6
+IMAGE_H, PAD_H = 340, 6
+IMAGE_W, PAD_W = 512, 0
 
 
 
@@ -41,7 +44,7 @@ def gather_files(root_dir: str | os.PathLike) -> List[str]:
 
 def build_dataset(
     files_root_dir: str |  os.PathLike, 
-    output_dir: str | os.PathLike,
+    ds_save_dir: str | os.PathLike,
     val_size: float = 0.05,
     test_size: float = 0.10,
     shuffle: bool = True,
@@ -56,9 +59,9 @@ def build_dataset(
     msks_ds = load_dataset(path = join(files_root_dir, "mask"), data_files = masks)
     
     # Adding name column & renaming label column
-    img_ds['train'] = img_ds['train'].add_column('name', names)
-    msks_ds = msks_ds.rename_column("image", "label")
-    #img_ds = img_ds.rename_column("image", "pixel_values")
+    img_ds['train'] = img_ds['train'].add_column('names', names)
+    msks_ds = msks_ds.rename_column("image", "labels")
+    img_ds = img_ds.rename_column("image", "pixel_values")
 
     # Merging into one dataset 
     img_ds['train'] = concatenate_datasets([img_ds['train'], msks_ds['train']], axis=1)
@@ -69,9 +72,26 @@ def build_dataset(
     img_ds = img_ds['train'].train_test_split(test_size=test_size, shuffle=shuffle)
     img_ds["validation"] = val_ds
 
+    # Saving the test dataset in raw format
+    img_dir = os.path.join(ds_save_dir, "raw", "test")
+    os.makedirs(f"{img_dir}", exist_ok=True)
+    for example in tqdm(img_ds['test'], desc="Saving images"):
+        image = example['pixel_values']
+        mask = example['labels']
+        name = example['names']
+        # Generate unique filenames
+        img_filename = f"{os.path.join(img_dir, 'img', name)}.jpg"
+        msk_filename = f"{os.path.join(img_dir, 'mask', name)}.bmp"
+        
+        # The image column usually holds PIL objects after loading
+        # Save the PIL image
+        image.save(f"{img_filename}")
+        mask.save(f"{msk_filename}", "BMP")
+
     # Saving to disk
-    os.makedirs(f"{output_dir}", exist_ok=True)
-    img_ds.save_to_disk(f"{output_dir}")
+    ds_dir = os.path.join(ds_save_dir, "processed")
+    os.makedirs(f"{ds_dir}", exist_ok=True)
+    img_ds.save_to_disk(f"{ds_dir}")
 
 
 def seg_data_collator(features):
@@ -104,9 +124,9 @@ def padding_fn(
     # Scale masks to 0,1
     masks = [(mask - mask.min()) / (mask.max() - mask.min()) for mask in masks]
     
-    inputs = {"pixel_values": [], "labels": []}
+    inputs = {"pixel_values": [], "labels": [], "names": []}
 
-    for img, mask in zip(images, masks):
+    for img, mask, name in zip(images, masks, examples["names"]):
         
         # Apply Padding
         padded = transform_func(image=img, mask=mask)
@@ -115,6 +135,9 @@ def padding_fn(
         
         # Ensure mask is long type and scaled (0 and 1)
         inputs["labels"].append(padded["mask"].long())
+
+        # Keeping other data
+        inputs["names"].append(name)
 
     return inputs
 
@@ -171,7 +194,6 @@ def train_preprocess_fn(
     masks = [(mask - mask.min()) / (mask.max() - mask.min()) for mask in masks]
     
     inputs = {"pixel_values": [], "labels": []}
-    #print(f"############### examples.keys = {examples.keys()}")
     for img, mask in zip(images, masks):
         # Apply Albumentations
         augmented = transform_func(image=img, mask=mask)

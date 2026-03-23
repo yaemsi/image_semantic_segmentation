@@ -11,20 +11,26 @@ from loguru import logger
 from PIL import Image
 
 from datasets import (
+    concatenate_datasets,
     load_from_disk,
     load_dataset,
 )
 
 from torch.utils.data import DataLoader
+from transformers import EvalPrediction
 from tqdm import tqdm
 
 
 from image_semantic_segmentation import (
+    IMAGE_H, 
+    PAD_H,
+    IMAGE_W, 
+    PAD_W,
     gather_files,
-    UNetPlusPlusConfig, 
     UNetPlusPlusHF,
     padding_fn,
-    compute_metrics
+    compute_metrics,
+    simple_loss_func
 )
 
 def iou(pred: torch.Tensor, mask:torch.Tensor, label=1) -> float:
@@ -52,7 +58,6 @@ def custom_compute_metrics(metric: str, pred_path: str, mask_path: str) -> float
     each image and mask located in the pred_path and mask_path respectively.
     """
     pred_file_list = sorted(glob.glob(pred_path + "/*"))
-    logger.info(f"pred_file_list == {pred_file_list}")
     score = 0.
 
     for pred_file in pred_file_list:
@@ -68,6 +73,7 @@ def custom_compute_metrics(metric: str, pred_path: str, mask_path: str) -> float
     return score/len(pred_file_list)
 
 
+
 def evaluate(
     model_path: str | os.PathLike, 
     dataset_path: str | os.PathLike, 
@@ -75,7 +81,7 @@ def evaluate(
     split: str = 'test', 
     batch_size: int = 32,
     num_proc: int = 2,
-    ):
+    ) -> None:
 
     logger.info(f"********* Running evaluation *********")
 
@@ -84,6 +90,7 @@ def evaluate(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNetPlusPlusHF.from_pretrained(model_path)
     model.to(device)
+    model.eval()
 
     logger.info(f">> Loading the dataset ...")
     ds = load_from_disk(dataset_path)
@@ -93,26 +100,37 @@ def evaluate(
         ds[f'{split}'], 
         batch_size=batch_size, 
         shuffle=False, 
-        num_workers=num_proc
+        num_workers=num_proc,
+        pin_memory=True,
+        prefetch_factor=num_proc,
         )
     preds, labels = [], []
 
-
+    total_loss = 0.
+    criterion = simple_loss_func
     logger.info(f">> Running inference ...")
+    
     for data in tqdm(dataloader):
-        inputs = {k: v.to(device) for k,v in data.items() if isinstance(v, torch.tensor)}
+        inputs = {k: v.to(device) for k,v in data.items() if isinstance(v, torch.Tensor)}
         annotations = inputs.pop("labels")
-        outputs = model(**inputs)
-        preds.extend(outputs.tolist())
+        outputs = None
+        with torch.no_grad():
+            outputs = model(**inputs)
+        loss = criterion(outputs, annotations) # "outputs" is of SemanticSegmenterOutput type
+    
+        total_loss += loss.item()
+        preds.extend(outputs.logits.tolist())
         labels.extend(annotations.tolist())
     
     logger.info(f">> Computing metrics ...\n")
-    results = compute_metrics(preds, labels)
+    results = compute_metrics(EvalPrediction(torch.tensor(preds), torch.tensor(labels)))
+    results[f'{split}_loss'] = total_loss / len(dataloader)
 
     logger.info(f"{results}")
 
     logger.info(f"\n>> Saving results ...\n")
-    with open(f"{os.path.join(save_path, 'results.json')}", "w") as f:
+    os.makedirs(f"{save_path}", exist_ok=True)
+    with open(f"{os.path.join(save_path, f'results_{split}.json')}", "w") as f:
         json.dump(results, f, indent = 4)
     logger.info(f"**************** Done ****************")
 
@@ -120,15 +138,13 @@ def evaluate(
 
 
 
-
-
 def predict(
-    model_path: str | os.PathLike, 
-    img_path: str | os.PathLike, 
+    img_path: str | os.PathLike,
     save_path: str | os.PathLike,
+    model_path: str | os.PathLike = "./output_image_segmentation/final", 
     batch_size: int = 32,
     num_proc: int = 2
-    ):
+    ) -> None:
     logger.info(f"********* Running inference *********")
 
     logger.info(f">> Loading the model ...")
@@ -137,41 +153,67 @@ def predict(
     model.to(device)
 
 
+
     logger.info(f">> Building the dataset ...")
     
     # Gathering files names
-    imgs = gather_files(f"{img_path}")
+    imgs = gather_files(os.path.join(f"{img_path}", "img"))
+    masks = gather_files(os.path.join(f"{img_path}", "mask"))
     names = [f.split('.')[0] for f in imgs]
     
+
     # Loading datasets 
-    img_ds = load_dataset(path = f"{img_path}", data_files = imgs)
+    img_ds = load_dataset(path = os.path.join(f"{img_path}", "img"), data_files = imgs)
+    msks_ds = load_dataset(path = os.path.join(f"{img_path}", "mask"), data_files = masks)
     
     # Adding name column & renaming label column
-    img_ds['train'] = img_ds['train'].add_column('name', names)
+    img_ds['train'] = img_ds['train'].add_column('names', names)
+    msks_ds = msks_ds.rename_column("image", "labels")
     img_ds = img_ds.rename_column("image", "pixel_values")
 
+    # Merging into one dataset 
+    img_ds['train'] = concatenate_datasets([img_ds['train'], msks_ds['train']], axis=1)
 
-    img_ds[f'train'].set_transform(padding_fn)
+
+    img_ds.set_transform(padding_fn)
     
     dataloader = DataLoader(
-        img_ds[f'train'], 
+        img_ds['train'], 
         batch_size=batch_size, 
         shuffle=False, 
-        num_workers=num_proc
+        num_workers=num_proc,
+        pin_memory=True,
+        prefetch_factor=num_proc,
         )
-    
-    preds = []
 
 
     logger.info(f">> Running inference ...")
-    for data in tqdm(dataloader):
-        inputs = {k: v.to(device) for k,v in data.items() if isinstance(v, torch.tensor)}
-        outputs = model(**inputs)
-        preds.extend(outputs.tolist())
-    
-    logger.info(f">> Saving predictions to disk ...\n")
-    for mask, name in zip(preds, names):
+    total_loss = 0.
+    save_dir = os.path.join(save_path, 'mask')
+    os.makedirs(save_dir, exist_ok = True)
 
+    for data in tqdm(dataloader):
+            inputs = {k: v.to(device) for k,v in data.items() if isinstance(v, torch.Tensor)}
+            
+            with torch.no_grad():
+                outputs = model(**inputs)
+            
+            for pred, name in zip(outputs.logits, data['names']):
+                mask = np.argmax(pred.cpu(), axis=0)                     # (2, H, W) -> (H, W)
+                mask = mask[PAD_H:IMAGE_H+PAD_H,PAD_W:IMAGE_W+PAD_W]     # (H, W) -> (H', W')
+                mask[mask==1] = 255
+                pil_image = Image.fromarray(mask.numpy().astype(np.uint8), 'L') 
+                pil_image.save(os.path.join(f"{save_dir}", f"{name}.bmp"), "BMP")            
+
+            total_loss += outputs.loss.item()
+    
+
+    logger.info(f">> Running custom evaluation ...\n")
+    score = custom_compute_metrics(iou, save_dir, os.path.join(img_path, 'mask'))
+    logger.info('>> Mean IOU: {:.4f}'.format(score))
+    res = {'Mean IOU': score, 'Loss': total_loss / len(dataloader)}
+    with open(os.path.join(save_path, "result.json"), 'w') as fp:
+        json.dump(res, fp, indent = 4)
 
     logger.info(f"*************** Done ****************")
 

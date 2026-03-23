@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = "==3.12.12"
 dependencies = [
-    "transformers",
+    "transformers<5.0.0",
     "huggingface",
     "datasets>=4.5.0",
     "accelerate",

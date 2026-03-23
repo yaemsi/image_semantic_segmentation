@@ -1,4 +1,6 @@
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from transformers import TrainingArguments
 from transformers.trainer_utils import (
     IntervalStrategy,
@@ -28,12 +30,18 @@ class GeneralArguments:
             "help": "Use this option to evaluate the model."
         },
     )
+    predict: bool = field(
+        default=False,
+        metadata={
+            "help": "Use this option to use the model for inference."
+        },
+    )
     def __post_init__(self):
-        var_list = [self.preprocess, self.train, self.evaluate]
+        var_list = [self.preprocess, self.train, self.evaluate, self.predict]
         if not any(v==True for v in var_list):
-            raise ValueError(f"You should use at least one of these options: '{['--preprocess', '--train', '--evaluate']}'")
+            raise ValueError(f"You should use at least one of these options: '{['--preprocess', '--train', '--evaluate', '--predict']}'")
         elif var_list.count(True) != 1:
-            raise ValueError(f"You should use only one of these options: '{['--preprocess', '--train', '--evaluate']}'")
+            raise ValueError(f"You should use only one of these options: '{['--preprocess', '--train', '--evaluate', '--evaluate']}'")
             
         
 
@@ -53,7 +61,7 @@ class DataProcessingArguments:
         default=None, 
         metadata={"help": "Where to extract the images."}
     )
-    ds_dir: int | None = field(
+    ds_dir: str | None = field(
         default=None,
         metadata={
             "help": "Directory where to save the dataset."
@@ -247,24 +255,22 @@ class CustomTrainingArguments(TrainingArguments):
             "help": "Maximum number of checkpoints to keep. Deletes older checkpoints in `output_dir`. The best checkpoint is always retained when `load_best_model_at_end=True`."
         },
     )
-    """
     torch_compile: bool = field(
         default=False, 
         metadata={"help": "Compile the model using `torch.compile()` for faster training."}
     )
     torch_compile_mode: str | None = field(
-        default="default",
+        default=None,
         metadata={
             "help": "Compilation mode for `torch.compile()`. If set, automatically enables `torch_compile`.",
         },
     )
     torch_compile_backend: str | None = field(
-        default="inductor",
+        default=None,
         metadata={
             "help": "Backend for `torch.compile()`. If set, automatically enables `torch_compile`.",
         },
     )
-    """
     bf16: bool = field(
         default=True,
         metadata={
@@ -367,18 +373,57 @@ class EvalArguments:
     """
     Arguments for evaluation.
     """
-    test_set_path: str = field(
-        default="resnet34",
+    model_path: str  = field(
+        default=Path("./output_image_segmentation/final"),
         metadata={
-            "help": "Path to test data."
+            "help": "Path to model weights."
         },
     )
-    prediction_path: int= field(
-        default=5,
+
+    img_path: str  = field(
+        default=Path("./data/raw_test_set"),
+        metadata={
+            "help": "Path to raw test data."
+        },
+    )
+
+    ds_path: str  = field(
+        default=Path("./data/processed"),
+        metadata={
+            "help": "Path to raw test data."
+        },
+    )
+
+    split: str = field(
+        default="test",
+        metadata={
+            "help": "Dataset fraction to use."
+        },
+    )
+
+    save_path: str  = field(
+        default=Path("./output_predictions"),
         metadata={
             "help": "Where to save results."
         },
     )
+
+    batch_size: int = field(
+        default=32,
+        metadata={
+            "help": "Evaluation batch size."
+        },
+    )
+
+    num_proc: int = field(
+        default=2,
+        metadata={
+            "help": "Dataloader's number of processes."
+        },
+    )
+
+
+
 
     def __post_init__(self):
         pass

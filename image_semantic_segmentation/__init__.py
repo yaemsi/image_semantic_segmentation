@@ -29,7 +29,7 @@ from .training import (
     DiceLoss,
     CombinedLoss,
     compute_metrics,
-    custom_loss_func
+    simple_loss_func
 )
 
 from .inference import (
@@ -62,7 +62,7 @@ __all__ = [
     "DiceLoss",
     "CombinedLoss",
     "compute_metrics",
-    "combined_loss_func",
+    "simple_loss_func",
     "iou",
     "custom_compute_metrics",
     "evaluate",

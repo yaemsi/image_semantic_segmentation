@@ -1,158 +1,128 @@
 ## Image Semantic Segmentation
 
-This repository contains a training pipeline for semantic segmentation: given an input RGB image, the model predicts a per-pixel mask indicating whether the logo overlaps each pixel.
+This project trains and evaluates a semantic segmentation model to predict, for every pixel, whether the **Mila logo overlaps** the pixel. The challenge setting and dataset details are described in [`documents/instructions.pdf`](documents/instructions.pdf).
 
-The original challenge setting and dataset description are summarized in [`documents/instructions.pdf`](documents/instructions.pdf).
+## Goals
 
-## What is implemented
+Given an RGB image (`340x512`), the model outputs a binary mask of the same spatial size indicating logo overlap for each pixel. Performance is measured with **IoU** (mean Intersection over Union).
 
-- Dataset preprocessing from a provided zip into a Hugging Face `datasets` format (saved to disk).
-- Training of a U-Net++-style model (via `segmentation-models-pytorch`) using Hugging Face `Trainer`.
-- Metric computation using mean IoU (`evaluate.load("mean_iou")`).
-- Model checkpoint saving to `output_dir/final`.
-- A benchmark script (`image_semantic_segmentation/evaluation.py`) that computes IoU from saved predictions.
+## Model
 
-Notes:
-- `main.py --evaluate` is currently `NotImplementedError`.
-- `evaluation.py` expects an `infer.py` script to exist (it defaults to `./infer.py`), but `infer.py` is not included in this repo.
+- Architecture: `segmentation_models_pytorch.UnetPlusPlus` wrapped as a Hugging Face `PreTrainedModel`.
+- Backbone: `resnet34` by default.
+- Classes: `2` (background vs. logo).
+- Loss/metrics:
+  - Loss: `BCEWithLogitsLoss` on the **logo channel** (`logits[:, 1, ...]`) with a padding crop to remove padded rows/cols.
+  - Metric: `evaluate.load("mean_iou")` computed after taking `argmax` and removing the same padding via fixed indices.
 
-## Quick start
+Padding constants are hard-coded in `image_semantic_segmentation/dataset.py` / `image_semantic_segmentation/model.py`:
+`IMAGE_H=340`, `PAD_H=6`, `IMAGE_W=512`, `PAD_W=0`.
 
-### 1) (Optional) Preprocess the raw dataset zip
+## Repository layout
 
-The preprocessing pipeline expects extracted data to have:
+- `main.py`: single entrypoint (preprocess/train/evaluate/predict) driven by CLI flags.
+- `image_semantic_segmentation/`: dataset building, model, training utilities, and inference utilities.
+  - `image_semantic_segmentation/dataset.py`: preprocessing + padding/collation
+  - `image_semantic_segmentation/model.py`: UNet++ wrapper
+  - `image_semantic_segmentation/training.py`: loss + metric functions
+  - `image_semantic_segmentation/inference.py`: evaluation + prediction helpers
+- `scripts/`: runnable shell wrappers
+  - `process_data.sh`, `train.sh`, `evaluate.sh`, `predict.sh`
+- `data/`: extracted dataset + Hugging Face processed dataset
+- `output_image_segmentation/`: training checkpoints and final model
+- `output_evaluation/`: evaluation metrics json
+- `output_prediction/`: predicted masks (`.bmp`) and a small summary json
 
-- `img/`: RGB images
-- `mask/`: corresponding masks (BMP in the original challenge)
+## Dataset format
 
-Example (using the included `data/data.zip`):
+The preprocessing assumes your raw data folder contains:
+
+- `img/`: RGB images (JPG)
+- `mask/`: corresponding masks (BMP)
+
+The zip extraction step simply unpacks the provided archive into `img_dir`, and the code expects the extracted structure above.
+
+After preprocessing, the repo produces:
+
+- `data/processed/`: Hugging Face `datasets` dataset (contains `train`, `validation`, and `test`)
+- `data/raw/test/`: a raw `img/` + `mask/` subset corresponding to the test split
+
+## How to run
+
+### 0) (Optional) Prepare environment
+
+Dependencies are defined in `pyproject.toml` / `uv.lock`. If you use `uv`, a typical workflow is:
 
 ```bash
-python main.py --preprocess \
-  --extract_data \
-  --zip_file_path ./data/data.zip \
-  --img_dir ./data/extracted \
-  --process_data \
-  --ds_dir ./data/processed
+uv sync --frozen
 ```
 
-Alternatively, you can skip preprocessing if `./data/processed` already exists.
+### 1) Preprocess the dataset
+
+Runs `main.py --preprocess` and builds the Hugging Face dataset on disk.
+
+```bash
+bash scripts/process_data.sh
+```
+
+This uses:
+
+- `data/data.zip` as input
+- writes to `data/` (processed dataset + raw test split)
 
 ### 2) Train
 
-The repo includes a ready-to-run script (`launch.sh`). It launches training with `accelerate` and the config in `configs/acc_no_dynamo.yaml`.
+Runs `accelerate launch ... main.py --train ...`.
 
 ```bash
-bash launch.sh
+bash scripts/train.sh
 ```
 
-You can also run the same command directly:
+Outputs:
+
+- `output_image_segmentation/final/` (saved at the end of training)
+- intermediate checkpoints under `output_image_segmentation/` depending on `TrainingArguments`
+
+### 3) Evaluate on the test split
 
 ```bash
-accelerate launch --config_file ./configs/acc_no_dynamo.yaml main.py --train \
-  --dataset_path ./data/processed \
-  --output_dir ./output_image_segmentation \
-  --learning_rate 6e-5 \
-  --max_steps 25000 \
-  --warmup_steps 8000 \
-  --save_steps 2500 \
-  --eval_steps 2500 \
-  --per_device_train_batch_size 32 \
-  --per_device_eval_batch_size 32
+bash scripts/evaluate.sh
 ```
 
-The script saves the final model to:
+Outputs:
 
-- `./output_image_segmentation/final/`
+- `output_evaluation/results_test.json`
 
-During training, checkpoints may also be created under `output_dir/checkpoint-*` depending on the `TrainingArguments` save strategy.
+### 4) Predict masks (and compute a custom mean IoU)
 
-## CLI reference (`main.py`)
+```bash
+bash scripts/predict.sh
+```
 
-`main.py` uses Hugging Face `HfArgumentParser` with these mutually exclusive top-level modes:
+Outputs:
 
-- `--preprocess`: extract and/or convert the dataset
-- `--train`: load a processed dataset from disk and train the model
-- `--evaluate`: not implemented yet
+- `output_prediction/mask/*.bmp` (predicted masks)
+- `output_prediction/result.json` (summary of mean IoU + loss)
 
-### Preprocess arguments
+## Test set results
 
-- `--extract_data` + `--zip_file_path` + `--img_dir`
-- `--process_data` + `--img_dir` + `--ds_dir`
+The current evaluation output on the test split is recorded in `output_evaluation/results_test.json`:
 
-### Train arguments (key ones)
+- `mean_iou`: **0.9419186788822862**
+- `mean_accuracy`: **0.9654617581129691**
+- `overall_accuracy`: **0.9965993022340177**
+- `test_loss`: **0.6843880406066553**
 
-- `--dataset_path`: path to the dataset saved by `build_dataset()` (e.g. `./data/processed`)
-- `--output_dir`: where checkpoints and `final` are written
-- Common optimization settings:
-  - `--learning_rate`
-  - `--max_steps`
-  - `--warmup_steps`
-  - `--save_steps`
-  - `--eval_steps`
-  - `--per_device_train_batch_size`
-  - `--per_device_eval_batch_size`
+## Relation to the official challenge deliverables
 
-Model hyperparameters are controlled by `ModelArguments` (encoder/decoder channels, etc.). Defaults are set in `image_semantic_segmentation/arguments.py`.
-
-## Model and training details
-
-- Model: `segmentation_models_pytorch.UnetPlusPlus`
-- Number of classes: `2` (background vs. logo)
-- Loss: in `image_semantic_segmentation/training.py`, training uses `CombinedLoss`, currently implemented as BCE on the probability of the logo class (computed from `softmax(logits)`), with padding removal handled in the loss function.
-- Metric/loss padding handling: images are padded to a multiple of 32, and then evaluation/loss slice out the padded rows using fixed indices (tied to the original image height used by the challenge).
-- Metrics: mean IoU via the `evaluate` package.
-
-## Evaluation / inference
-
-The challenge expects a script:
+The challenge requires an inference script with the interface:
 
 ```bash
 python infer.py <image_dir> <output_dir>
 ```
 
-This repo does not include `infer.py`, but it does include a benchmark script:
+This repo provides a prediction pipeline through `main.py --predict` (see `scripts/predict.sh`) and the underlying implementation in `image_semantic_segmentation/inference.py`. If you need the exact `infer.py` signature for submission, you can wrap/adapt the existing `predict()` logic to:
 
-- `image_semantic_segmentation/evaluation.py`
-
-What `evaluation.py` expects:
-
-- `--script_path`: path to your inference script (default `./infer.py`)
-- `--testset_path`: directory containing one or more test-set folders (default `./test/`)
-- Each test-set folder contains:
-  - `img/`: input images
-  - `mask/`: ground-truth masks (`.bmp`)
-- Your `infer.py` should write predictions under:
-  - `<prediction_path>/<test_name>/<same_filename_as_img>`
-- The evaluator thresholds prediction pixels with `pred > 0.5` (so predictions should be binary masks where logo pixels are non-zero, commonly `0/255` grayscale).
-
-Example benchmark command:
-
-```bash
-python -m image_semantic_segmentation.evaluation \
-  --script_path ./infer.py \
-  --testset_path ./data/test \
-  --prediction_path ./output_predictions
-```
-
-## Repository layout
-
-- `main.py`: single entrypoint (preprocess/train)
-- `launch.sh`: example `accelerate` training launcher
-- `configs/`: `accelerate` configuration files
-- `image_semantic_segmentation/`: model, dataset processing, training, evaluation
-- `data/`: raw zip, extracted images, and processed Hugging Face datasets
-- `output_image_segmentation/`: training outputs/checkpoints
-- `documents/instructions.pdf`: challenge description and deliverables
-
-## Dependencies
-
-Dependencies are declared in `pyproject.toml` (including `torch`, `segmentation-models-pytorch`, `albumentations`, `datasets`, `transformers`, `evaluate`, `wandb`).
-
-`pyproject.toml` pins a CUDA-enabled PyTorch build (see `tool.uv.sources`).
-
-## Important notes
-
-- `launch.sh` sets a `WANDB_API_KEY` value. Replace it with your own and avoid committing real credentials.
-- If you want to disable W&B logging, you may need to modify the training code in `main.py` because `wandb.init(...)` is called unconditionally.
+- read only images from `<image_dir>/img` (or from `<image_dir>` directly, depending on your submission format)
+- write predicted masks to `<output_dir>` with matching filenames
 

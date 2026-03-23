@@ -13,19 +13,19 @@ from transformers import (
 from image_semantic_segmentation import (
     UNetPlusPlusConfig,
     UNetPlusPlusHF,
-    custom_loss_func,
     GeneralArguments,
     DataProcessingArguments,
     ModelArguments,
     CustomTrainingArguments,
     EvalArguments,
+    simple_loss_func,
     padding_fn,
-    train_preprocess_fn,
-    eval_preprocess_fn,
     compute_metrics,
     seg_data_collator,
     extract_data,
-    build_dataset
+    build_dataset,
+    evaluate,
+    predict
 )
 
 
@@ -57,6 +57,7 @@ def main():
                 data_args.img_dir, 
                 data_args.ds_dir
                 )
+
     elif gen_args.train:
         logger.info(f">>> Training the model...")
         logger.info(f"# Loading the dataset...")
@@ -90,7 +91,7 @@ def main():
             eval_dataset = ds["validation"],
             compute_metrics = compute_metrics,
             data_collator = seg_data_collator,
-            compute_loss_func=custom_loss_func
+            compute_loss_func=simple_loss_func
         )
         logger.info(f"# Launching the training...")
         trainer.train()
@@ -99,7 +100,22 @@ def main():
         model.save_pretrained(os.path.join(train_args.output_dir, 'final'), from_pt=True) 
 
     elif gen_args.evaluate:
-        raise NotImplementedError(f"Evaluation is not implemented yet")
+        evaluate(
+            model_path = eval_args.model_path, 
+            dataset_path = eval_args.ds_path,
+            save_path = eval_args.save_path,
+            split = eval_args.split, 
+            batch_size = eval_args.batch_size,
+            num_proc = eval_args.num_proc,
+        )
+    elif gen_args.predict:
+        predict(
+            img_path=eval_args.img_path,
+            save_path=eval_args.save_path,
+            model_path = eval_args.model_path, 
+            batch_size = eval_args.batch_size,
+            num_proc = eval_args.num_proc
+        ) 
 
     logger.info("******* Done *******")
 
