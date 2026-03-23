@@ -1,15 +1,3 @@
-#!/bin/bash
-
-# Parameters
-export ZIP_FILE_PATH="./data/data.zip"
-export DS_PATH="./data/raw/test"
-export OUTPUT_DIR="./data"
-
-
-python  main.py --preprocess \
-    --zip_file_path $ZIP_FILE_PATH \
-    --img_dir $DS_PATH \
-    --ds_dir $OUTPUT_DIR \
-    --extract_data true \
-    --process_data true
-
+version https://git-lfs.github.com/spec/v1
+oid sha256:05b1ee4dc36389d2d969d580f5d889b0935a405df3a4449a96aa84ad4cddc8f7
+size 298
