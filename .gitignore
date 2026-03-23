@@ -214,4 +214,6 @@ __marimo__/
 # Specific folders
 data/extracted/
 data/processed/
+data/raw/
 notebooks/
+output_*/
