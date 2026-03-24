@@ -1,3 +1,27 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:68d14e3c9b5b1d1afaefebfbcc102de0ab633819616fccd5665133be79f5389a
-size 540
+{
+  "activation": null,
+  "architectures": [
+    "UNetPlusPlusHF"
+  ],
+  "aux_params": null,
+  "classes": 2,
+  "dataset_path": "./data/processed",
+  "decoder_attention_type": null,
+  "decoder_channels": [
+    256,
+    128,
+    64,
+    32,
+    16
+  ],
+  "decoder_interpolation": "nearest",
+  "decoder_use_norm": "batchnorm",
+  "dtype": "float32",
+  "encoder_depth": 5,
+  "encoder_name": "resnet34",
+  "encoder_weights": "imagenet",
+  "in_channels": 3,
+  "model_type": "unetplusplus",
+  "transformers_version": "5.2.0",
+  "use_cache": true
+}
