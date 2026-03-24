@@ -1,3 +1,33 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:37f09def65da6c5c3edb16976c9d4f4b1fc6a63550febaf73f1652cd2367eaa7
-size 881
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        args: ["--maxkb=5120"]
+      - id: detect-private-key
+        files: \.(py|sh|yaml|yml|toml|json|md)$
+      - id: check-ast
+      - id: check-json
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-executables-have-shebang
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v3.1.0
+    hooks:
+      - id: shellcheck
+        files: ^(scripts/|bash/)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.8
+    hooks:
+      - id: ruff
+        args: []
+        types: [python]
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: ["--check", "--line-length=88"]
+
